@@ -2492,6 +2492,24 @@ attributes.
   }];
 }
 
+/// ADDED NEW QUALITY PRAGMA CODE
+def QualityDocs : Documentation {
+  let Category = DocCatStmt;
+  let Heading = "#pragma quality";
+  let Content = [{
+The ``#pragma quality`` directive allows add metadata in the IR to specific functions or to the general program.
+  }];
+}
+/// FINISH NEW QUALITY PRAGMA CODE
+
+def JytestDocs : Documentation {
+  let Category = DocCatStmt;
+  let Heading = "#pragma jytest";
+  let Content = [{
+The ``#pragma jytest`` directive allows add metadata in the IR to specific functions or to the general program.
+  }];
+}
+
 def LoopHintDocs : Documentation {
   let Category = DocCatStmt;
   let Heading = "#pragma clang loop";

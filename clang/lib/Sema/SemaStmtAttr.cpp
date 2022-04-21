@@ -16,6 +16,8 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Sema/DelayedDiagnostic.h"
 #include "clang/Sema/Lookup.h"
+#include "clang/Sema/QualityHint.h"
+#include "clang/Sema/JytestHint.h"
 #include "clang/Sema/LoopHint.h"
 #include "clang/Sema/ScopeInfo.h"
 #include "llvm/ADT/StringExtras.h"
@@ -77,6 +79,60 @@ static Attr *handleSuppressAttr(Sema &S, Stmt *St, const ParsedAttr &A,
       A.getRange(), S.Context, DiagnosticIdentifiers.data(),
       DiagnosticIdentifiers.size(), A.getAttributeSpellingListIndex());
 }
+
+/// ADDED NEW QUALITY PRAGMA
+static Attr *handleQualityAttr(Sema &S, Stmt *St, const ParsedAttr &A,
+                                SourceRange) {
+  IdentifierLoc *PragmaNameLoc = A.getArgAsIdent(0);
+  IdentifierLoc *OptionLoc = A.getArgAsIdent(1);
+  Expr *ValueExpr = nullptr;
+  Expr *ValueExprF = nullptr;
+  bool PragmaMain = OptionLoc->Ident->getName() == "main";
+  bool PragmaFunct = OptionLoc->Ident->getName() == "funct";
+  QualityAttr::OptionType Option;
+  if (PragmaMain) {
+    Option = QualityAttr::Main;
+    ValueExpr = A.getArgAsExpr(2);
+  } else if (PragmaFunct) {
+    Option = QualityAttr::Funct;
+    ValueExprF = A.getArgAsExpr(2);
+    ValueExpr = A.getArgAsExpr(3);
+  } else {
+    printf("Error, no main or funct\n");
+  }
+  if (!ValueExpr) {
+    printf("Error in Sema getting N\n");
+  }
+  return QualityAttr::CreateImplicit(S.Context, Option, ValueExprF, ValueExpr, A.getRange());
+}
+/// FINISH NEW QUALITY PRAGMA
+
+/// ADDED NEW JYTEST PRAGMA
+static Attr *handleJytestAttr(Sema &S, Stmt *St, const ParsedAttr &A,
+                                SourceRange) {
+  IdentifierLoc *PragmaNameLoc = A.getArgAsIdent(0);
+  IdentifierLoc *OptionLoc = A.getArgAsIdent(1);
+  Expr *ValueExpr = nullptr;
+  Expr *ValueExprF = nullptr;
+  bool PragmaMain = OptionLoc->Ident->getName() == "main";
+  bool PragmaFunct = OptionLoc->Ident->getName() == "funct";
+  JytestAttr::OptionType Option;
+  if (PragmaMain) {
+    Option = JytestAttr::Main;
+    ValueExpr = A.getArgAsExpr(2);
+  } else if (PragmaFunct) {
+    Option = JytestAttr::Funct;
+    ValueExprF = A.getArgAsExpr(2);
+    ValueExpr = A.getArgAsExpr(3);
+  } else {
+    printf("Error, no main or funct\n");
+  }
+  if (!ValueExpr) {
+    printf("Error in Sema getting N\n");
+  }
+  return JytestAttr::CreateImplicit(S.Context, Option, ValueExprF, ValueExpr, A.getRange());
+}
+/// FINISH NEW JYTEST PRAGMA
 
 static Attr *handleLoopHintAttr(Sema &S, Stmt *St, const ParsedAttr &A,
                                 SourceRange) {
@@ -298,6 +354,10 @@ static Attr *ProcessStmtAttribute(Sema &S, Stmt *St, const ParsedAttr &A,
     return nullptr;
   case ParsedAttr::AT_FallThrough:
     return handleFallThroughAttr(S, St, A, Range);
+  case ParsedAttr::AT_Quality:
+    return handleQualityAttr(S, St, A, Range);
+  case ParsedAttr::AT_Jytest:
+    return handleJytestAttr(S, St, A, Range);
   case ParsedAttr::AT_LoopHint:
     return handleLoopHintAttr(S, St, A, Range);
   case ParsedAttr::AT_OpenCLUnrollHint:

@@ -19,6 +19,8 @@
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/PrettyStackTrace.h"
 #include "clang/Basic/TargetInfo.h"
+#include "clang/Sema/QualityHint.h"
+#include "clang/Sema/JytestHint.h"
 #include "clang/Sema/LoopHint.h"
 #include "clang/Sema/SemaDiagnostic.h"
 #include "llvm/ADT/StringExtras.h"
@@ -48,6 +50,20 @@ void CodeGenFunction::EmitStopPoint(const Stmt *S) {
 void CodeGenFunction::EmitStmt(const Stmt *S, ArrayRef<const Attr *> Attrs) {
   assert(S && "Null statement?");
   PGO.setCurrentStmt(S);
+
+  /// ADDED NEW QUALITY PRAGMA
+  if (Attrs.size() > 0) {
+    if (Attrs[0]->getKind() == attr::Quality)
+      addQualityMetadata(Builder.GetInsertBlock(), Attrs);
+  }
+  /// FINISH NEW QUALITY PRAGMA
+
+  /// ADDED NEW JYTEST PRAGMA
+  if (Attrs.size() > 0) {
+    if (Attrs[0]->getKind() == attr::Jytest)
+      addJytestMetadata(Builder.GetInsertBlock(), Attrs);
+  }
+  /// FINISH NEW JYTEST PRAGMA
 
   // These statements have their own debug info handling.
   if (EmitSimpleStmt(S))
@@ -461,6 +477,128 @@ void CodeGenFunction::EmitBlock(llvm::BasicBlock *BB, bool IsFinished) {
     CurFn->getBasicBlockList().push_back(BB);
   Builder.SetInsertPoint(BB);
 }
+
+/// ADDED NEW QUALITY PRAGMA
+void CodeGenFunction::addQualityMetadata(llvm::BasicBlock *block, ArrayRef<const Attr *> QualityAttrs) {
+  using namespace llvm;
+  if (QualityAttrs[0]->getKind() == attr::Quality) {
+    const Attr *t = QualityAttrs[0];
+    const QualityAttr *attr = (const QualityAttr*)t;
+    ASTContext& AC = CGM.getContext();
+    BasicBlock::iterator it_start = block->getFirstInsertionPt();
+    Instruction *inst_start = &*it_start; 
+    Instruction *inst_final = inst_start;
+    std::string metadata_string;
+    if (attr->getOption() == QualityAttr::Funct) {
+        metadata_string = "Quality Funct ";
+        int run = 1;
+        std::string str, strF = "";
+        clang::Expr *ValueExprF = attr->getValueF();
+        clang::Expr::EvalResult EvalResult;
+        if (ValueExprF) {
+          bool e = ValueExprF->EvaluateAsLValue(EvalResult, AC); 
+          if (e) {
+            strF = EvalResult.Val.getAsString(AC, ValueExprF->getType());
+            // String comes like &foo1, cut the '&'
+            strF = strF.substr(1,std::string::npos);
+          }
+        }
+        while (run) {
+          if (inst_start != nullptr) {
+            if (isa<CallInst>(inst_start)) {
+              str = cast<CallInst>(inst_start)->getCalledFunction()->getName();
+              if (strF == str)
+              {
+                inst_final = inst_start;
+                run = 0;
+                break;
+              }
+            }
+            inst_start = inst_start->getNextNode(); 
+            if (inst_start != nullptr) inst_final = inst_start;
+          } else {
+          run = 0;
+          break;
+          }
+        }
+    } else if (attr->getOption() == QualityAttr::Main) {
+        metadata_string = "Quality Main ";
+    }
+    LLVMContext& C = inst_final->getContext();
+    unsigned ValueInt = 0;
+    auto *ValueExpr = attr->getValue();
+    if (ValueExpr) {
+        llvm::APSInt ValueAPS = ValueExpr->EvaluateKnownConstInt(AC);
+        ValueInt = ValueAPS.getSExtValue();
+    } 
+    std::string s = std::to_string(ValueInt);
+    std::string result = metadata_string + s;
+    MDNode* N = MDNode::get(C, MDString::get(C, result));
+    inst_final->setMetadata("quality", N);
+  } 
+}
+/// FINISH NEW QUALITY PRAGMA
+
+/// ADDED NEW JYTEST PRAGMA
+void CodeGenFunction::addJytestMetadata(llvm::BasicBlock *block, ArrayRef<const Attr *> JytestAttrs) {
+  using namespace llvm;
+  if (JytestAttrs[0]->getKind() == attr::Jytest) {
+    const Attr *t = JytestAttrs[0];
+    const JytestAttr *attr = (const JytestAttr*)t;
+    ASTContext& AC = CGM.getContext();
+    BasicBlock::iterator it_start = block->getFirstInsertionPt();
+    Instruction *inst_start = &*it_start; 
+    Instruction *inst_final = inst_start;
+    std::string metadata_string;
+    if (attr->getOption() == JytestAttr::Funct) {
+        metadata_string = "Jytest Funct ";
+        int run = 1;
+        std::string str, strF = "";
+        clang::Expr *ValueExprF = attr->getValueF();
+        clang::Expr::EvalResult EvalResult;
+        if (ValueExprF) {
+          bool e = ValueExprF->EvaluateAsLValue(EvalResult, AC); 
+          if (e) {
+            strF = EvalResult.Val.getAsString(AC, ValueExprF->getType());
+            // String comes like &foo1, cut the '&'
+            strF = strF.substr(1,std::string::npos);
+          }
+        }
+        while (run) {
+          if (inst_start != nullptr) {
+            if (isa<CallInst>(inst_start)) {
+              str = cast<CallInst>(inst_start)->getCalledFunction()->getName();
+              if (strF == str)
+              {
+                inst_final = inst_start;
+                run = 0;
+                break;
+              }
+            }
+            inst_start = inst_start->getNextNode(); 
+            if (inst_start != nullptr) inst_final = inst_start;
+          } else {
+          run = 0;
+          break;
+          }
+        }
+    } else if (attr->getOption() == JytestAttr::Main) {
+        metadata_string = "jytest Main ";
+    }
+    LLVMContext& C = inst_final->getContext();
+    unsigned ValueInt = 0;
+    auto *ValueExpr = attr->getValue();
+    if (ValueExpr) {
+        llvm::APSInt ValueAPS = ValueExpr->EvaluateKnownConstInt(AC);
+        ValueInt = ValueAPS.getSExtValue();
+    } 
+    std::string s = std::to_string(ValueInt);
+    std::string result = metadata_string + s;
+    MDNode* N = MDNode::get(C, MDString::get(C, result));
+    inst_final->setMetadata("jytest", N);
+  } 
+}
+/// FINISH NEW JYTEST PRAGMA
 
 void CodeGenFunction::EmitBranch(llvm::BasicBlock *Target) {
   // Emit a branch from the current block to the target one if this

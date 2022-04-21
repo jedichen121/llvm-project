@@ -18,6 +18,7 @@
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
 #include "clang/Parse/RAIIObjectsForParser.h"
+#include "clang/Sema/JytestHint.h"
 #include "clang/Sema/LoopHint.h"
 #include "clang/Sema/Scope.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -198,6 +199,19 @@ private:
   Sema &Actions;
 };
 
+// NEW ADDED QUALITY PRAGMA
+struct PragmaQualityHandler : public PragmaHandler {
+  PragmaQualityHandler() : PragmaHandler("quality") {}
+  void HandlePragma(Preprocessor &PP, PragmaIntroducerKind Introducer,
+                    Token &FirstToken) override;
+};
+
+struct PragmaJytestHandler : public PragmaHandler {
+  PragmaJytestHandler(const char *name) : PragmaHandler(name) {}
+  void HandlePragma(Preprocessor &PP, PragmaIntroducerKind Introducer,
+                    Token &FirstToken) override;
+};
+
 struct PragmaLoopHintHandler : public PragmaHandler {
   PragmaLoopHintHandler() : PragmaHandler("loop") {}
   void HandlePragma(Preprocessor &PP, PragmaIntroducerKind Introducer,
@@ -343,6 +357,15 @@ void Parser::initializePragmaHandlers() {
   OptimizeHandler.reset(new PragmaOptimizeHandler(Actions));
   PP.AddPragmaHandler("clang", OptimizeHandler.get());
 
+  /// ADDED NEW QUALITY PRAGMA
+  QualityHandler.reset(new PragmaQualityHandler());
+  PP.AddPragmaHandler(QualityHandler.get());
+
+  JytestHandler.reset(new PragmaJytestHandler("jytest"));
+  // PP.AddPragmaHandler(JytestHandler.get());
+  // PP.AddPragmaHandler("GCC", JytestHandler.get());
+  PP.AddPragmaHandler(JytestHandler.get());
+
   LoopHintHandler.reset(new PragmaLoopHintHandler());
   PP.AddPragmaHandler("clang", LoopHintHandler.get());
 
@@ -441,6 +464,13 @@ void Parser::resetPragmaHandlers() {
 
   PP.RemovePragmaHandler("clang", OptimizeHandler.get());
   OptimizeHandler.reset();
+
+  /// ADDED NEW QUALITY PRAGMA
+  PP.RemovePragmaHandler(QualityHandler.get());
+  QualityHandler.reset();
+
+  PP.RemovePragmaHandler(JytestHandler.get());
+  JytestHandler.reset();
 
   PP.RemovePragmaHandler("clang", LoopHintHandler.get());
   LoopHintHandler.reset();
@@ -942,6 +972,24 @@ bool Parser::HandlePragmaMSInitSeg(StringRef PragmaName,
   return true;
 }
 
+/// ADDED NEW jiyangtest PRAGMA
+namespace {
+struct PragmaJytestInfo {
+  Token PragmaName;
+  Token Option;
+  ArrayRef<Token> Toks;
+};
+} // end anonymous namespace
+
+/// ADDED NEW QUALITY PRAGMA
+namespace {
+struct PragmaQualityInfo {
+  Token PragmaName;
+  Token Option;
+  ArrayRef<Token> Toks;
+};
+} // end anonymous namespace
+
 namespace {
 struct PragmaLoopHintInfo {
   Token PragmaName;
@@ -962,6 +1010,123 @@ static std::string PragmaLoopHintString(Token PragmaName, Token Option) {
   }
   return PragmaString;
 }
+
+/// ADDED NEW QUALITY PRAGMA
+bool Parser::HandlePragmaQuality(QualityHint &Hint) {
+  assert(Tok.is(tok::annot_pragma_quality));
+  PragmaQualityInfo *Info =
+      static_cast<PragmaQualityInfo *>(Tok.getAnnotationValue());
+
+  IdentifierInfo *PragmaNameInfo = Info->PragmaName.getIdentifierInfo();
+  Hint.PragmaNameLoc = IdentifierLoc::create(
+      Actions.Context, Info->PragmaName.getLocation(), PragmaNameInfo);
+
+  IdentifierInfo *OptionInfo = Info->Option.getIdentifierInfo();
+  Hint.OptionLoc = IdentifierLoc::create(
+      Actions.Context, Info->Option.getLocation(), OptionInfo);
+
+  bool OptionMain = OptionInfo->isStr("main");
+  bool OptionFunct = OptionInfo->isStr("funct");
+
+  llvm::ArrayRef<Token> Toks = Info->Toks;
+  PP.EnterTokenStream(Toks, /*DisableMacroExpansion=*/false);
+  ConsumeAnnotationToken();
+
+  if (OptionFunct) {
+    Hint.ValueExprF = ParseConstantExpression().get();
+    Hint.ValueExpr = ParseConstantExpression().get();
+  } else if (OptionMain) {
+    Hint.ValueExpr = ParseConstantExpression().get();
+  } else {
+    printf("Neither main or funct as option parameters\n");
+  }
+    // Tokens following an error in an ill-formed constant expression will
+    // remain in the token stream and must be removed.
+  if (Tok.isNot(tok::eof)) {
+    printf("Not EOF\n");
+    while (Tok.isNot(tok::eof))
+      ConsumeAnyToken();
+  }
+  ConsumeToken(); // Consume the constant expression eof terminator.
+  Hint.Range = SourceRange(Info->PragmaName.getLocation(),
+                           Info->Toks.back().getLocation());
+  return true;
+}
+/// FINISH NEW QUALITY PRAGMA
+
+/// ADDED NEW JYTEST PRAGMA
+bool Parser::HandlePragmaJytest(JytestHint &Hint) {
+  assert(Tok.is(tok::annot_pragma_jytest));
+  PragmaJytestInfo *Info =
+      static_cast<PragmaJytestInfo *>(Tok.getAnnotationValue());
+
+  IdentifierInfo *PragmaNameInfo = Info->PragmaName.getIdentifierInfo();
+  Hint.PragmaNameLoc = IdentifierLoc::create(
+      Actions.Context, Info->PragmaName.getLocation(), PragmaNameInfo);
+
+  IdentifierInfo *OptionInfo = Info->Option.getIdentifierInfo();
+  Hint.OptionLoc = IdentifierLoc::create(
+      Actions.Context, Info->Option.getLocation(), OptionInfo);
+
+  bool OptionMain = OptionInfo->isStr("main");
+  bool OptionFunct = OptionInfo->isStr("funct");
+
+  llvm::ArrayRef<Token> Toks = Info->Toks;
+  PP.EnterTokenStream(Toks, /*DisableMacroExpansion=*/false);
+  ConsumeAnnotationToken();
+
+  if (OptionFunct) {
+    Hint.ValueExprF = ParseConstantExpression().get();
+    Hint.ValueExpr = ParseConstantExpression().get();
+  } else if (OptionMain) {
+    Hint.ValueExpr = ParseConstantExpression().get();
+  } else {
+    printf("Neither main or funct as option parameters\n");
+  }
+    // Tokens following an error in an ill-formed constant expression will
+    // remain in the token stream and must be removed.
+  if (Tok.isNot(tok::eof)) {
+    printf("Not EOF\n");
+    while (Tok.isNot(tok::eof))
+      ConsumeAnyToken();
+  }
+  ConsumeToken(); // Consume the constant expression eof terminator.
+  Hint.Range = SourceRange(Info->PragmaName.getLocation(),
+                           Info->Toks.back().getLocation());
+  return true;
+}
+/// FINISH NEW JYTEST PRAGMA
+
+// /// ADDED NEW JYTEST PRAGMA
+// void Parser::HandlePragmaJytestHelper() {
+//   // assert(Tok.is(tok::annot_pragma_quality));
+//   PragmaJytestInfo *Info =
+//       static_cast<PragmaJytestInfo *>(Tok.getAnnotationValue());
+
+//   IdentifierInfo *PragmaNameInfo = Info->PragmaName.getIdentifierInfo();
+
+//   llvm::ArrayRef<Token> Toks = Info->Toks;
+//   // auto Toks = std::make_unique<Token[]>(Info->Toks.size());
+//   // std::copy(Info->Toks.begin(),Info->Toks.end(),Toks.get());
+//   // PP.EnterTokenStream(std::move(Toks), Info->Toks.size(), /*DisableMacroExpansion=*/true,
+//   //                     /*IsReinject=*/false);
+  
+//   PP.EnterTokenStream(Toks, /*DisableMacroExpansion=*/true,
+//                       /*IsReinject=*/false);
+//   // ConsumeAnnotationToken();
+
+//   // // Tokens following an error in an ill-formed constant expression will
+//   // // remain in the token stream and must be removed.
+//   // if (Tok.isNot(tok::eof)) {
+//   //   printf("Not EOF\n");
+//   //   while (Tok.isNot(tok::eof))
+//   //     ConsumeAnyToken();
+//   // }
+
+//   // ConsumeToken(); // Consume the constant expression eof terminator.
+//   return;
+// }
+// /// FINISH NEW JYTEST PRAGMA
 
 bool Parser::HandlePragmaLoopHint(LoopHint &Hint) {
   assert(Tok.is(tok::annot_pragma_loop_hint));
@@ -2682,6 +2847,51 @@ void Parser::HandlePragmaFP() {
   ConsumeAnnotationToken();
 }
 
+/// ADDED NEW QUALITY PRAGMA
+static bool ParseQualityValue(Preprocessor &PP, Token &Tok, Token PragmaName,
+                    Token Option, PragmaQualityInfo &Info) {
+  SmallVector<Token, 1> ValueList;
+
+  while (Tok.isNot(tok::eod)) {
+    ValueList.push_back(Tok);
+    PP.Lex(Tok);
+  }
+  Token EOFTok;
+  EOFTok.startToken();
+  EOFTok.setKind(tok::eof);
+  EOFTok.setLocation(Tok.getLocation());
+  ValueList.push_back(EOFTok); // Terminates expression for parsing.
+
+  Info.Toks = llvm::makeArrayRef(ValueList).copy(PP.getPreprocessorAllocator());
+  Info.Option = Option;
+  Info.PragmaName = PragmaName;
+  return true;
+
+}
+/// FINISH NEW QUALITY PRAGMA
+
+/// ADDED NEW JYTEST PRAGMA
+static bool ParseJytestValue(Preprocessor &PP, Token &Tok, Token PragmaName,
+                    Token Option, PragmaJytestInfo &Info) {
+  SmallVector<Token, 1> ValueList;
+
+  while (Tok.isNot(tok::eod)) {
+    ValueList.push_back(Tok);
+    PP.Lex(Tok);
+  }
+  Token EOFTok;
+  EOFTok.startToken();
+  EOFTok.setKind(tok::eof);
+  EOFTok.setLocation(Tok.getLocation());
+  ValueList.push_back(EOFTok); // Terminates expression for parsing.
+
+  Info.Toks = llvm::makeArrayRef(ValueList).copy(PP.getPreprocessorAllocator());
+  Info.Option = Option;
+  Info.PragmaName = PragmaName;
+  return true;
+
+}
+
 /// Parses loop or unroll pragma hint value and fills in Info.
 static bool ParseLoopHintValue(Preprocessor &PP, Token &Tok, Token PragmaName,
                                Token Option, bool ValueInParens,
@@ -2837,6 +3047,142 @@ void PragmaLoopHintHandler::HandlePragma(Preprocessor &PP,
 
   PP.EnterTokenStream(std::move(TokenArray), TokenList.size(),
                       /*DisableMacroExpansion=*/false);
+}
+
+/// NEW ADDED QUALITY PRAGMA
+void PragmaQualityHandler::HandlePragma(Preprocessor &PP,
+                                         PragmaIntroducerKind Introducer,
+                                         Token &Tok) {
+  Token PragmaName = Tok;
+  SmallVector<Token, 1> TokenList;
+  PP.Lex(Tok);
+  if (Tok.isNot(tok::identifier)) {
+    printf("Error, not a identifier token for the option ofpragma quality\n"); 
+    return;
+  }
+
+  Token Option = Tok;
+  IdentifierInfo *OptionInfo = Tok.getIdentifierInfo();
+  bool OptionValid = llvm::StringSwitch<bool>(OptionInfo->getName())
+                           .Case("main", true)
+                           .Case("funct", true)
+                           .Default(false);
+  if (!OptionValid) {
+    printf("Error, option not recognized for pragma quality\n");
+    return;
+  }
+  PP.Lex(Tok);
+
+  auto *Info = new (PP.getPreprocessorAllocator()) PragmaQualityInfo;
+  if (!ParseQualityValue(PP, Tok, PragmaName, Option, *Info))
+    return;
+
+  Token QualityTok;
+  QualityTok.startToken();
+  QualityTok.setKind(tok::annot_pragma_quality);
+  QualityTok.setLocation(PragmaName.getLocation());
+  QualityTok.setAnnotationEndLoc(PragmaName.getLocation());
+  QualityTok.setAnnotationValue(static_cast<void *>(Info));
+  TokenList.push_back(QualityTok);
+
+  if (Tok.isNot(tok::eod)) {
+    printf("Error, extra tokens at the end of pragma quality\n");
+    PP.Diag(Tok.getLocation(), diag::warn_pragma_extra_tokens_at_eol)
+        << "quality pragma";
+    return;
+  }
+  auto TokenArray = llvm::make_unique<Token[]>(TokenList.size());
+  std::copy(TokenList.begin(), TokenList.end(), TokenArray.get());
+  PP.EnterTokenStream(std::move(TokenArray), TokenList.size(),
+                      /*DisableMacroExpansion=*/false);
+} 
+/// FINISH NEW QUALITY PRAGMA
+
+// void PragmaJytestHandler::HandlePragma(Preprocessor &PP,
+//                                 PragmaIntroducerKind Introducer,
+//                                 Token &Tok) {
+//   Token PragmaName = Tok;
+//   SmallVector<Token, 1> TokenList;
+//   PP.Lex(Tok);
+//   if (Tok.isNot(tok::identifier)) {
+//     printf("Error, not a identifier token for the option ofpragma quality\n");
+//     return;
+//   }
+
+//   Token Option = Tok;
+//   IdentifierInfo *OptionInfo = Tok.getIdentifierInfo();
+//   bool OptionValid = llvm::StringSwitch<bool>(OptionInfo->getName())
+//                            .Case("main", true)
+//                            .Case("funct", true)
+//                            .Default(false);
+//   if (!OptionValid) {
+//     printf("Error, option not recognized for pragma quality\n");
+//     return;
+//   }
+//   PP.Lex(Tok);
+
+//   auto *Info = new (PP.getPreprocessorAllocator()) PragmaJytestInfo;
+//   if (!ParseJytestValue(PP, Tok, PragmaName, Option, *Info))
+//     return;
+
+//   Token QualityTok;
+//   QualityTok.startToken();
+//   QualityTok.setKind(tok::annot_pragma_jytest);
+//   QualityTok.setLocation(PragmaName.getLocation());
+//   QualityTok.setAnnotationEndLoc(PragmaName.getLocation());
+//   QualityTok.setAnnotationValue(static_cast<void *>(Info));
+//   TokenList.push_back(QualityTok);
+
+//   if (Tok.isNot(tok::eod)) {
+//     printf("Error, extra tokens at the end of pragma jytest\n");
+//     PP.Diag(Tok.getLocation(), diag::warn_pragma_extra_tokens_at_eol)
+//         << "quality jytest";
+//     return;
+//   }
+//   auto TokenArray = llvm::make_unique<Token[]>(TokenList.size());
+//   std::copy(TokenList.begin(), TokenList.end(), TokenArray.get());
+//   PP.EnterTokenStream(std::move(TokenArray), TokenList.size(),
+//                       /*DisableMacroExpansion=*/false);
+// }
+
+void PragmaJytestHandler::HandlePragma(Preprocessor &PP,
+                                PragmaIntroducerKind Introducer,
+                                Token &FirstToken) {
+  Token PragmaName = FirstToken;
+  // PP.Diag(FirstToken.getLocation(), diag::err_expected)
+  //         << PragmaName.getIdentifierInfo()->getName();
+  assert(FirstToken.is(tok::annot_pragma_jytest));
+
+  Token tok;
+  SmallVector<Token, 1> ValueList;
+  ArrayRef<Token> tmp_list;
+  // PP.Diag(FirstToken.getLocation(), diag::err_expected) << "while loop";
+  while(FirstToken.isNot(tok::eod)){
+    ValueList.push_back(FirstToken);
+    PP.Lex(FirstToken); 
+    // PP.Diag(FirstToken.getLocation(), diag::err_expected) << FirstToken.getIdentifierInfo()->getName();
+  } 
+
+  Token EOFTok;
+  EOFTok.startToken();
+  EOFTok.setKind(tok::eof);
+  EOFTok.setLocation(FirstToken.getLocation());
+  ValueList.push_back(EOFTok); // Terminates expression for parsing.
+
+  auto *Info = new (PP.getPreprocessorAllocator()) PragmaJytestInfo;
+  Info->Toks = llvm::makeArrayRef(ValueList).copy(PP.getPreprocessorAllocator());
+  Info->PragmaName = PragmaName;
+  
+  MutableArrayRef<Token> Toks(PP.getPreprocessorAllocator().Allocate<Token>(1),
+                              1);
+  Toks[0].startToken();
+  Toks[0].setKind(tok::annot_pragma_jytest);
+  Toks[0].setLocation(PragmaName.getLocation());
+  Toks[0].setAnnotationEndLoc(PragmaName.getLocation());
+  // Toks[0].setAnnotationValue(strdup("jiyang_test"));
+  Toks[0].setAnnotationValue(static_cast<void *>(Info));
+  PP.EnterTokenStream(Toks, /*DisableMacroExpansion=*/false);
+  PP.Diag(FirstToken.getLocation(), diag::err_expected) << "end of PragmaJytestHandler";
 }
 
 /// Handle the loop unroll optimization pragmas.

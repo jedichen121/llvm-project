@@ -22,6 +22,8 @@
 #include "clang/Lex/CodeCompletionHandler.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/DeclSpec.h"
+#include "clang/Sema/QualityHint.h"
+#include "clang/Sema/JytestHint.h"
 #include "clang/Sema/LoopHint.h"
 #include "clang/Sema/Sema.h"
 #include "llvm/ADT/SmallVector.h"
@@ -182,6 +184,8 @@ class Parser : public CodeCompletionHandler {
   std::unique_ptr<PragmaHandler> MSOptimize;
   std::unique_ptr<PragmaHandler> CUDAForceHostDeviceHandler;
   std::unique_ptr<PragmaHandler> OptimizeHandler;
+  std::unique_ptr<PragmaHandler> QualityHandler;
+  std::unique_ptr<PragmaHandler> JytestHandler;
   std::unique_ptr<PragmaHandler> LoopHintHandler;
   std::unique_ptr<PragmaHandler> UnrollHintHandler;
   std::unique_ptr<PragmaHandler> NoUnrollHintHandler;
@@ -679,6 +683,15 @@ private:
   /// #pragma clang __debug captured
   StmtResult HandlePragmaCaptured();
 
+  /// ADDED NEW QUALITY PRAGMA
+  bool HandlePragmaQuality(QualityHint &Hint);
+
+  /// ADDED NEW JYTEST PRAGMA
+  bool HandlePragmaJytest(JytestHint &Hint);
+
+  /// ADDED NEW jytest PRAGMA
+  void HandlePragmaJytestHelper();
+  
   /// Handle the annotation token produced for
   /// #pragma clang loop and #pragma unroll.
   bool HandlePragmaLoopHint(LoopHint &Hint);
@@ -1891,6 +1904,14 @@ private:
   StmtResult ParseReturnStatement();
   StmtResult ParseAsmStatement(bool &msAsm);
   StmtResult ParseMicrosoftAsmStatement(SourceLocation AsmLoc);
+  StmtResult ParsePragmaQuality(StmtVector &Stmts,
+                                 AllowedConstructsKind Allowed,
+                                 SourceLocation *TrailingElseLoc,
+                                 ParsedAttributesWithRange &Attrs);
+  StmtResult ParsePragmaJytest(StmtVector &Stmts,
+                                 AllowedConstructsKind Allowed,
+                                 SourceLocation *TrailingElseLoc,
+                                 ParsedAttributesWithRange &Attrs);
   StmtResult ParsePragmaLoopHint(StmtVector &Stmts,
                                  AllowedConstructsKind Allowed,
                                  SourceLocation *TrailingElseLoc,
